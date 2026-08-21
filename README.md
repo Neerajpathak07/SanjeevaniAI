@@ -7,6 +7,14 @@
 > flies in, diagnoses what's actually dying, and brings the money back with
 > the discipline of a doctor, not the desperation of a debt collector.**
 
+```python
+   _____ ___    _   __     ____________ _    _____    _   ______
+  / ___//   |  / | / /    / / ____/ __// |  / /   |  / | / /  _/
+  \__ \/ /| | /  |/ /__  / / __/ / _/  | | / / /| | /  |/ // /
+ ___/ / ___ |/ /|  / /_/ / /___/ /___  | |/ / ___ |/ /|  // /
+/____/_/  |_/_/ |_/\____/_____/_____/  |___/_/  |_/_/ |_/___/
+```
+
 Built for the **AI Revenue Recovery** track: an agent that *detects revenue at
 risk, determines the right intervention, and executes a bounded recovery
 workflow* and then proves it, with **measured money recovered across a
