@@ -46,7 +46,8 @@ Then interrogate it:
 ```bash
 python3 -m engine verify --ledger out/ledger.jsonl   # walk the hash chain
 python3 -m engine case case_00196                    # one case's full life story
-python3 -m unittest discover -s tests                    # 27 tests, incl. compliance invariants
+python3 -m engine baseline                           # duel vs the dumb dunning cron
+python3 -m unittest discover -s tests                # 45 tests, incl. compliance invariants
 ```
 
 Try editing a single character in `out/ledger.jsonl` and re-running `verify`
@@ -77,6 +78,30 @@ flowchart LR
 The catch most systems miss: **the refusals are the product.** An agent that
 moves money must be able to prove not just what it did, but what it declined
 to do, and why. Sanjeevani's ledger records both with equal ceremony.
+
+### Proof, not posture: I ran the dunning cron too
+
+Claiming to beat "a dumb retry cron" is cheap, so the repo ships the cron —
+`python3 -m engine baseline` runs the **same seeded world** through a typical
+nightly dunning job (retry everything, email + SMS everyone at 21:30, no
+diagnosis, no guardrails) and through Sanjeevani, then scores **both** action
+streams with the same ground-truth policy auditor:
+
+|                     | dumb cron | Sanjeevani |
+|---------------------|-----------|------------|
+| recovered (seed 42) | ₹70,24,140 (40.1%) | **₹1,00,36,502.35 (57.2%)** |
+| spend               | ₹2,789 | **₹2,096** |
+| customer contacts   | 2,525 | **314** |
+| disputes provoked   | 12 | **3** |
+| promises kept       | 0/0 | **9/9** |
+| policy violations   | **7,195** (quiet hours 2,525 · weekly cap 2,097 · contact cap 1,986 · consent 329 · dispute freeze 214 · missing pre-debit notice 44) | **0** |
+| audit trail         | none (it's a cron) | hash-chained ✔ |
+
+Everything else world, seed, priors, attempt-fatigue is held constant, so
+the delta is exactly what diagnosis + guardrails + stopping rules add: **₹30
+lakh more recovered, with an eighth of the contact burden and zero
+violations.** And the engine's zero is *measured* by the same auditor that
+scored the cron, not asserted.
 
 ### Diagnosis picks the cure, not a template
 
@@ -138,21 +163,41 @@ Crucially, the world and the guardrails share the same prior table
 world it acts in, the same way a production system would calibrate priors
 against its own historical conversion data.
 
+### The seam is real: a Razorpay test-mode world ships in this repo
+
+"Swap the simulator for Razorpay webhooks" is not a roadmap bullet it's
+[`engine/razorpay_world.py`](engine/razorpay_world.py), a second
+implementation of the same `perform()` contract that creates **real
+test-mode payment links and orders** via Razorpay's REST API (stdlib urllib,
+zero dependencies) and resolves money-moving outcomes **only** from
+webhook events whose `X-Razorpay-Signature` verified (HMAC-SHA256,
+constant-time compare). Safety is structural: the client refuses any key
+that isn't `rzp_test_*`, so live money cannot move through this code path.
+
+```bash
+export RAZORPAY_KEY_ID=rzp_test_... RAZORPAY_KEY_SECRET=...   # free test keys
+python3 -m engine razorpay smoke      # creates a real payment link, hash-chained ledger
+RAZORPAY_WEBHOOK_SECRET=... python3 -m engine razorpay webhook  # verified receiver
+python3 -m engine razorpay smoke      # re-run after paying: PAID, from the webhook
+```
+
 ```
 engine/
-├── datagen.py     seeded synthetic batch: observable signals ⊥ hidden truth
-├── diagnose.py    signals -> root cause + confidence (deterministic rules)
-├── triage.py      expected value -> P0–P3
-├── playbooks.py   8 bounded playbooks, declarative delays ("+26h", "salary_day", "promise_due")
-├── guardrails.py  13 rules; verdicts: proceed / defer / skip / stop
-├── engine.py      event-driven orchestrator over a simulated clock (heapq)
-├── world.py       the ONLY module with ground truth the integration seam
-├── ledger.py      SHA-256 hash-chained append-only audit log + verifier
-├── brain.py       message copy: templates, optionally polished by Claude
-├── metrics.py     measured-money-recovered accounting
-├── report_html.py self-contained dashboard (light/dark, zero assets)
-├── config.py      policy-as-code: every knob, snapshotted into the ledger
-└── cli.py         demo · verify · case
+├── datagen.py           seeded synthetic batch: observable signals ⊥ hidden truth
+├── diagnose.py          signals -> root cause + confidence (deterministic rules)
+├── triage.py            expected value -> P0–P3
+├── playbooks.py         8 bounded playbooks, declarative delays ("+26h", "salary_day", "promise_due")
+├── guardrails.py        13 rules; verdicts: proceed / defer / skip / stop
+├── engine.py            event-driven orchestrator over a simulated clock (heapq)
+├── world.py             the ONLY module with ground truth the integration seam
+├── razorpay_world.py    the same seam against real test-mode Razorpay APIs
+├── baseline.py          the dumb dunning cron + ground-truth policy auditor
+├── ledger.py            SHA-256 hash-chained append-only audit log + verifier
+├── brain.py             message copy: templates, optionally polished by Claude
+├── metrics.py           measured-money-recovered accounting
+├── report_html.py       self-contained dashboard (light/dark, zero assets)
+├── config.py            policy-as-code: every knob, snapshotted into the ledger
+└── cli.py               demo · baseline · razorpay · verify · case
 ```
 
 Deeper dive: [ARCHITECTURE.md](ARCHITECTURE.md). Pitch material & war stories:
@@ -192,8 +237,9 @@ and any API failure silently falls back to templates mid-run.
 
 ## Roadmap (post-hackathon)
 
-- Replace `world.py` with Razorpay Payments/Subscriptions/Invoices webhooks +
-  real channel providers (the seam is already one method wide)
+- Grow `razorpay_world.py` from payment links + orders + verified webhooks
+  (shipping today, test-mode) to Subscriptions/Invoices APIs and real channel
+  providers
 - Learn priors from ledger history instead of the static table (the EV
   stopping rule gets sharper every week)
 - Bandit-style step ordering within playbooks *inside* the same guardrails
