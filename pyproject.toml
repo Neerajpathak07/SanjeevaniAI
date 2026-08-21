@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sanjeevani"
+version = "1.0.0"
+description = "Sanjeevani  the revenue resuscitation engine. Detects revenue at risk, diagnoses the root cause, and runs a bounded, guardrailed, fully audited recovery workflow."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Neeraj Pathak" }]
+keywords = ["revenue-recovery", "payments", "dunning", "agent", "fintech"]
+
+# Zero runtime dependencies  the whole engine is Python stdlib.
+dependencies = []
+
+[project.optional-dependencies]
+# Claude-drafted outreach copy (the engine runs fully offline without it).
+llm = ["anthropic>=0.40"]
+
+[project.scripts]
+sanjeevani = "engine.cli:main"
+
+[tool.setuptools]
+packages = ["engine"]
