@@ -2,6 +2,9 @@
 out/
 *.jsonl
 
+#docs for 5-min pitch
+docs/
+
 # python
 __pycache__/
 *.py[cod]

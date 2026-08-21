@@ -55,7 +55,8 @@ Then interrogate it:
 python3 -m engine verify --ledger out/ledger.jsonl   # walk the hash chain
 python3 -m engine case case_00196                    # one case's full life story
 python3 -m engine baseline                           # duel vs the dumb dunning cron
-python3 -m unittest discover -s tests                # 45 tests, incl. compliance invariants
+python3 -m engine serve --time-scale 60              # real-time daemon (test-mode keys)
+python3 -m unittest discover -s tests                # 53 tests, incl. compliance invariants
 ```
 
 Try editing a single character in `out/ledger.jsonl` and re-running `verify`
@@ -171,23 +172,40 @@ Crucially, the world and the guardrails share the same prior table
 world it acts in, the same way a production system would calibrate priors
 against its own historical conversion data.
 
-### The seam is real: a Razorpay test-mode world ships in this repo
+### Real time, for real: `serve`
 
-"Swap the simulator for Razorpay webhooks" is not a roadmap bullet it's
-[`engine/razorpay_world.py`](engine/razorpay_world.py), a second
-implementation of the same `perform()` contract that creates **real
-test-mode payment links and orders** via Razorpay's REST API (stdlib urllib,
-zero dependencies) and resolves money-moving outcomes **only** from
-webhook events whose `X-Razorpay-Signature` verified (HMAC-SHA256,
-constant-time compare). Safety is structural: the client refuses any key
-that isn't `rzp_test_*`, so live money cannot move through this code path.
+The batch demo is the *evaluation harness* it proves the brain's decisions
+over 200 cases with measurable, reproducible money. The **product** is
+`python3 -m engine serve`: the same engine (same diagnosis, playbooks,
+guardrails, hash-chained ledger literally the same class) running as a
+live daemon against test-mode Razorpay:
 
 ```bash
 export RAZORPAY_KEY_ID=rzp_test_... RAZORPAY_KEY_SECRET=...   # free test keys
-python3 -m engine razorpay smoke      # creates a real payment link, hash-chained ledger
-RAZORPAY_WEBHOOK_SECRET=... python3 -m engine razorpay webhook  # verified receiver
-python3 -m engine razorpay smoke      # re-run after paying: PAID, from the webhook
+python3 -m engine serve --time-scale 60
 ```
+
+Fail a test payment in your Razorpay dashboard and watch, live: the daemon
+**detects** it within one poll, maps the gateway error into the diagnostic
+vocabulary, **diagnoses** the root cause, assigns the playbook, and when
+the step comes due checked against all 13 guardrails at execution time
+creates a **real payment link**. Pay that link and the case resolves
+**recovered**, every event appending to the same tamper-evident chain
+(`out/live/ledger.jsonl`, one continuous chain across restarts; walk any
+case with `python3 -m engine case <id> --out out/live`).
+
+- **No public URL needed** detection and resolution poll the REST API, so
+  it runs on a laptop; a signature-verified webhook receiver
+  (`python3 -m engine razorpay webhook`) is supported as well.
+- **`--time-scale 60`** runs the virtual clock 60× wall speed so a "+6h"
+  playbook delay fires in 6 minutes guardrails check the virtual clock,
+  so quiet hours and RBI notice windows are fast-forwarded, never bypassed.
+- **Structurally safe**: the client refuses any key that isn't `rzp_test_*`
+  (live money cannot move through this code), and money-moving outcomes
+  come only from Razorpay-confirmed payment state (polled link status or
+  HMAC-verified webhooks).
+
+One-shot seam check without the daemon: `python3 -m engine razorpay smoke`.
 
 ```
 engine/
@@ -199,13 +217,14 @@ engine/
 ├── engine.py            event-driven orchestrator over a simulated clock (heapq)
 ├── world.py             the ONLY module with ground truth the integration seam
 ├── razorpay_world.py    the same seam against real test-mode Razorpay APIs
+├── live.py              real-time daemon: live detection -> diagnosis -> recovery
 ├── baseline.py          the dumb dunning cron + ground-truth policy auditor
 ├── ledger.py            SHA-256 hash-chained append-only audit log + verifier
 ├── brain.py             message copy: templates, optionally polished by Claude
 ├── metrics.py           measured-money-recovered accounting
 ├── report_html.py       self-contained dashboard (light/dark, zero assets)
 ├── config.py            policy-as-code: every knob, snapshotted into the ledger
-└── cli.py               demo · baseline · razorpay · verify · case
+└── cli.py               demo · serve · baseline · razorpay · verify · case
 ```
 
 Deeper dive: [ARCHITECTURE.md](ARCHITECTURE.md).
