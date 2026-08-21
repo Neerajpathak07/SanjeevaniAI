@@ -208,52 +208,7 @@ engine/
 └── cli.py               demo · baseline · razorpay · verify · case
 ```
 
-Deeper dive: [ARCHITECTURE.md](ARCHITECTURE.md). Pitch material & war stories:
-[docs/PITCH.md](docs/PITCH.md).
-
-## Design decisions worth arguing about
-
-1. **Rules decide, LLMs write.** Diagnosis, playbook selection and guardrails
-   are deterministic reproducible, testable, auditable. The optional Claude
-   integration (`pip install .[llm]` + `ANTHROPIC_API_KEY`) only polishes the
-   *prose* of outbound messages (including the Hinglish voice scripts). No key?
-   The built-in templates ship the same meaning. An agent that moves money
-   should never have a temperature on its decisions.
-2. **Bounded by construction.** A playbook is a finite tuple. There is nothing
-   after the last step except a write-off. Add the attempt caps and the
-   14-day horizon, and a runaway loop is structurally impossible not
-   "unlikely", impossible.
-3. **Money is integer paise.** Floats never touch a rupee.
-4. **Determinism as a feature.** Seeded batch + seeded world + simulated clock
-   ⇒ two runs with the same seed produce identical ledger head hashes. That
-   turns "trust me, it recovers money" into "run it yourself and diff."
-5. **The audit trail includes the no's.** Deferred for quiet hours, skipped
-   for consent, stopped for negative EV all hash-chained alongside the
-   actions. Compliance isn't a PDF; it's rows in the ledger.
-
-## Running with Claude (optional)
-
-```bash
-pip install anthropic
-export ANTHROPIC_API_KEY=sk-ant-...
-python3 -m engine demo            # copy now drafted by claude-opus-4-8
-python3 -m engine demo --no-llm   # force offline templates
-```
-
-Drafts are cached per template a 500-case batch costs a handful of calls,
-and any API failure silently falls back to templates mid-run.
-
-## Roadmap (post-hackathon)
-
-- Grow `razorpay_world.py` from payment links + orders + verified webhooks
-  (shipping today, test-mode) to Subscriptions/Invoices APIs and real channel
-  providers
-- Learn priors from ledger history instead of the static table (the EV
-  stopping rule gets sharper every week)
-- Bandit-style step ordering within playbooks *inside* the same guardrails
-- Merchant-facing policy editor: guardrails are already data, not code
-
----
+Deeper dive: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 *Sanjeevani: because "gentle reminder for the payment" deserved better
 engineering.*
