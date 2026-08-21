@@ -303,6 +303,69 @@ def cmd_razorpay(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Real-time daemon: live test-mode Razorpay failures in, recovery out."""
+    import time as _time
+    from .live import EchoLedger, LiveEngine, VirtualClock
+    from .razorpay_world import RazorpayClient, RazorpayError
+
+    key_id = os.environ.get("RAZORPAY_KEY_ID", "")
+    key_secret = os.environ.get("RAZORPAY_KEY_SECRET", "")
+    if not key_id or not key_secret:
+        print("serve needs test-mode credentials: export "
+              "RAZORPAY_KEY_ID=rzp_test_... RAZORPAY_KEY_SECRET=...\n"
+              "(free: razorpay.com -> Test Mode -> Settings -> API Keys)",
+              file=sys.stderr)
+        return 1
+    try:
+        client = RazorpayClient(key_id, key_secret)
+    except RazorpayError as e:
+        print(f"✘ {e}", file=sys.stderr)
+        return 1
+
+    out_dir = Path(args.out) / "live"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    clock = VirtualClock(scale=args.time_scale)
+    ledger = EchoLedger(out_dir / "ledger.jsonl", resume=True)
+    engine = LiveEngine(Policy(), client, ledger,
+                        Narrator(use_llm=False if args.no_llm else None),
+                        clock, out_dir)
+
+    print(BANNER)
+    print(f"  LIVE MODE  test-mode Razorpay  poll={args.poll}s  "
+          f"time-scale={args.time_scale}×  ledger={out_dir / 'ledger.jsonl'}")
+    print("  watching for failed payments — trigger one in your Razorpay")
+    print("  test dashboard (or pay a link with a failure test card) and")
+    print("  watch it get detected, diagnosed, and treated below.")
+    print("  Ctrl+C to stop.\n")
+
+    last_poll = 0.0
+    try:
+        while True:
+            if _time.monotonic() - last_poll >= args.poll:
+                last_poll = _time.monotonic()
+                try:
+                    engine.tick()
+                except RazorpayError as e:
+                    print(f"  ⚠ Razorpay API error (will retry): {e}",
+                          file=sys.stderr)
+            if args.once:
+                break
+            _time.sleep(1)
+    except KeyboardInterrupt:
+        pass
+
+    snap = engine.snapshot()
+    ledger.append("SERVE_STOPPED", at=clock.now(), payload=snap)
+    ledger.close()
+    print(f"\n  session: {snap['cases']} cases seen, {snap['recovered']} "
+          f"recovered ({snap['recovered_h']}), {snap['in_flight']} in flight")
+    ok, msg = AuditLedger.verify(out_dir / "ledger.jsonl")
+    print(f"  ledger {'✔ ' + msg if ok else '✘ ' + msg}")
+    print("  in-flight cases resume from the same ledger chain on restart\n")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python3 -m engine",
@@ -332,6 +395,19 @@ def main(argv: list[str] | None = None) -> int:
     p_verify = sub.add_parser("verify", help="verify the audit ledger hash chain")
     p_verify.add_argument("--ledger", default="out/ledger.jsonl")
     p_verify.set_defaults(func=cmd_verify)
+
+    p_serve = sub.add_parser(
+        "serve",
+        help="real-time daemon: watch test-mode Razorpay, recover live")
+    p_serve.add_argument("--poll", type=int, default=10,
+                         help="seconds between Razorpay polls")
+    p_serve.add_argument("--time-scale", type=float, default=60.0,
+                         help="virtual clock speed; 60 = '+6h' fires in 6 min")
+    p_serve.add_argument("--once", action="store_true",
+                         help="single tick (for scripting/tests)")
+    p_serve.add_argument("--no-llm", action="store_true")
+    p_serve.add_argument("--out", default="out")
+    p_serve.set_defaults(func=cmd_serve)
 
     p_rzp = sub.add_parser(
         "razorpay",

@@ -105,6 +105,12 @@ class RazorpayClient:
             "notes": {"case_id": case_id, "agent": "sanjeevani"},
         })
 
+    def list_payments(self, count: int = 20) -> list[dict]:
+        return self._call("GET", f"/payments?count={count}").get("items", [])
+
+    def fetch_payment_link(self, link_id: str) -> dict:
+        return self._call("GET", f"/payment_links/{link_id}")
+
 
 # --------------------------------------------------------------------------
 # Webhooks: verify first, then admit to the inbox the world reads.
@@ -209,6 +215,7 @@ class RazorpayWorld:
         amount = case.amount_paise - case.amount_paise * offer_bps // 10_000
         if step.kind == ActionKind.RETRY:
             order = self.client.create_order(amount, case.id)
+            case.flags.setdefault("rzp_orders", []).append(order.get("id"))
             return Outcome.NO_RESPONSE, \
                 f"order {order.get('id')} created; awaiting payment webhook"
 
@@ -216,6 +223,7 @@ class RazorpayWorld:
         link = self.client.create_payment_link(
             amount, f"Sanjeevani recovery — {case.leak_type.value} {case.id}",
             case.id, case.customer.name)
+        case.flags.setdefault("rzp_links", []).append(link.get("id"))
         via = step.channel.value if step.channel in CONTACT_CHANNELS else "link"
         return Outcome.NO_RESPONSE, \
             f"payment link {link.get('short_url')} created (via {via}); awaiting webhook"

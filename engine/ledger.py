@@ -25,12 +25,20 @@ def _entry_hash(entry: dict) -> str:
 
 
 class AuditLedger:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, resume: bool = False):
+        """`resume=True` continues an existing chain (append) instead of
+        starting a fresh ledger — used by the live daemon across restarts."""
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._seq = 0
         self._prev_hash = GENESIS_HASH
-        self._fh = self.path.open("w", encoding="utf-8")
+        mode = "w"
+        if resume and self.path.exists():
+            for entry in self.read(self.path):
+                self._prev_hash = entry["hash"]
+                self._seq = entry["seq"] + 1
+            mode = "a"
+        self._fh = self.path.open(mode, encoding="utf-8")
 
     def append(self, event: str, *, case_id: Optional[str] = None,
                at: Optional[datetime] = None, actor: str = "sanjeevani",
